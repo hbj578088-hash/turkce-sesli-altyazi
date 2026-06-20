@@ -29,7 +29,7 @@
 </head>
 <body><div class="wrap">
 <h1>🎙️ Türkçe Sesli Altyazı <span class="pill">v6 temiz sürüm</span></h1>
-<p>Video + altyazı + Türkçe Edge sesi. Önemli: video senkron için altyazıda zaman damgası olmalı. Düz çeviri metni zamanı kaybettirir; bu yüzden aşağıdaki “zamanı koruyarak çevir” özelliğini kullan.</p>
+<p>Video + altyazı + Türkçe ses. Telefonda/başka cihazda sunucu yoksa otomatik cihazın kendi sesine geçer. Önemli: video senkron için altyazıda zaman damgası olmalı; düz çeviri metni zamanı kaybettirir.</p>
 <div class="tabs">
 <button class="tab active" data-page="setup" onclick="showPage('setup')">1) Kurulum</button>
 <button class="tab" data-page="translate" onclick="showPage('translate')">2) Zamanlı Çeviri</button>
@@ -37,14 +37,14 @@
 </div>
 
 <div id="setup" class="page active">
- <div class="card"><h2>✅ Ses sistemi</h2>
+ <div class="card"><h2>✅ Ses sistemi / her cihaz modu</h2>
   <div class="grid">
    <div><label>Edge-TTS sunucu adresi</label><input id="endpoint" value="http://127.0.0.1:7866"></div>
    <div><label>Türkçe ses</label><select id="edgeVoice"><option value="tr-TR-EmelNeural">Emel Neural - kadın</option><option value="tr-TR-AhmetNeural">Ahmet Neural - erkek</option></select></div>
-   <div><label>Ses modu</label><select id="voiceMode"><option value="edge">Edge Türkçe neural ses</option><option value="browser">Tarayıcı/Windows sesi yedek</option></select></div>
+   <div><label>Ses modu</label><select id="voiceMode"><option value="auto">Otomatik: sunucu varsa Edge, yoksa cihaz sesi</option><option value="edge">Sadece Edge Türkçe neural ses</option><option value="browser">Cihaz/Tarayıcı sesi</option></select></div>
   </div>
   <div class="row" style="margin-top:12px"><button onclick="checkServer()">Sunucuyu kontrol et</button><button onclick="testVoice()">Sesi dene</button><button onclick="loadEdgeVoices()">Ücretsiz Türkçe sesleri yenile</button></div>
-  <p id="serverInfo" class="muted">Önce <code>Kanka-EdgeTTS-Baslat.bat</code> açık olsun. Edge Türkçe neural seslerde genelde 2 ücretsiz ses var: Emel ve Ahmet.</p>
+  <p id="serverInfo" class="muted">PC’de kaliteli Emel/Ahmet sesi için <code>Kanka-EdgeTTS-Baslat.bat</code> açık olsun. Telefonda veya başka cihazda sunucu yoksa otomatik cihaz sesiyle çalışır.</p>
  </div>
 </div>
 
@@ -66,14 +66,14 @@
  </div>
  <div class="card"><div class="videoBox"><video id="video" controls></video><div id="overlay">Altyazı burada görünecek</div></div>
   <div class="row" style="margin-top:12px"><button class="primary" onclick="enableSync()">Video ile senkron okut</button><button onclick="disableSync()">Senkronu kapat</button><button onclick="speakSelected()">Seçili satırı okut</button><button onclick="resetSpoken()">Okunanları sıfırla</button><button onclick="toggleMute()">Orijinal sesi aç/kıs</button></div>
-  <p class="muted">Senkron açıkken video zamanı satıra gelince ses otomatik başlar. Düz metinde zaman olmadığı için senkron çalışmaz.</p>
+  <p class="muted">Senkron açıkken video zamanı satıra gelince ses otomatik başlar. Telefonda sunucu olmasa bile cihaz sesiyle çalışır. Düz metinde zaman olmadığı için senkron çalışmaz.</p>
  </div>
  <div class="card"><div class="pill">Durum: <span id="status">Hazır</span></div><div class="pill">Satır: <span id="counter">0/0</span></div><div class="pill">Video: <span id="vtime">00:00</span></div><div class="pill">Senkron: <span id="syncState">kapalı</span></div><div class="pill">Okunan: <span id="doneCount">0</span></div><div id="now" class="now">Altyazı bekleniyor.</div></div>
  <div class="card"><h2>Altyazı satırları</h2><div id="list" class="list"></div></div>
 </div>
 </div>
 <script>
-let lines=[], current=0, sync=false, spoken=new Set(), activeAudio=null, raf=null, cache={}, pending=new Set();
+let lines=[], current=0, sync=false, spoken=new Set(), activeAudio=null, raf=null, cache={}, pending=new Set(), edgeReady=false;
 const $=id=>document.getElementById(id); const cacheKey='kankaV6EdgeCache';
 try{cache=JSON.parse(localStorage.getItem(cacheKey)||'{}')}catch{cache={}}
 function showPage(id){document.querySelectorAll('.page').forEach(p=>p.classList.toggle('active',p.id===id));document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.page===id));}
@@ -88,16 +88,39 @@ function parseSRT(text){let out=[];for(const block of text.replace(/\r/g,'').spl
 function parseSubtitle(text){let l=parseASS(text); if(l.length)return {format:'ass',lines:l}; l=parseSRT(text); if(l.length)return {format:'srt',lines:l}; return {format:'plain',lines:text.split(/\r?\n/).filter(x=>x.trim()).map((text,i)=>({start:i*3,end:i*3+2.5,text:cleanText(text),type:'plain'}))}}
 function render(){ $('counter').textContent=`${Math.min(current+1,lines.length)}/${lines.length}`; $('doneCount').textContent=`${spoken.size}/${lines.length}`; $('now').textContent=lines[current]?.text||'Altyazı bekleniyor.'; $('overlay').textContent=lines[current]?.text||''; $('list').innerHTML=lines.map((l,i)=>`<div class="line ${i===current?'active':''} ${spoken.has(i)?'done':''}" onclick="current=${i};render()"><span class="time">${i+1}. ${fmt(l.start)}-${fmt(l.end)}</span>${esc(l.text)}</div>`).join('');}
 function loadLines(text, source='file'){let r=parseSubtitle(text); lines=r.lines; current=0; spoken.clear(); $('rawSub').value=text; render(); if(r.format==='plain'){$('syncState').innerHTML='<span class="warn">zaman yok</span>'; setStatus('Düz metin yüklendi: video senkron için ASS/SRT gerekir')} else {$('syncState').textContent='hazır'; setStatus(`${lines.length} zamanlı altyazı yüklendi (${r.format.toUpperCase()})`)}}
-async function checkServer(){try{let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/health'); if(!r.ok)throw Error(r.status); $('serverInfo').innerHTML='<span class="ok">Edge-TTS hazır.</span>'; await loadEdgeVoices(); return true}catch(e){$('serverInfo').innerHTML='<span class="bad">Sunucu yok.</span> Kanka-EdgeTTS-Baslat.bat çalıştır.'; return false}}
+function effectiveVoiceMode(){
+  const mode=$('voiceMode').value;
+  if(mode==='browser') return 'browser';
+  if(mode==='edge') return edgeReady ? 'edge' : 'browser';
+  return edgeReady ? 'edge' : 'browser';
+}
+async function checkServer(){
+  try{
+    let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/health',{cache:'no-store'});
+    if(!r.ok)throw Error(r.status);
+    edgeReady=true;
+    $('serverInfo').innerHTML='<span class="ok">Edge-TTS hazır.</span> PC kaliteli Emel/Ahmet sesi kullanılacak.';
+    await loadEdgeVoices();
+    return true;
+  }catch(e){
+    edgeReady=false;
+    $('serverInfo').innerHTML='<span class="warn">Yerel Edge sunucusu yok.</span> Sorun değil: bu cihazda tarayıcı/telefon sesiyle çalışacak. PC’de kaliteli ses için Kanka-EdgeTTS-Baslat.bat aç.';
+    return false;
+  }
+}
 async function loadEdgeVoices(){let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/voices'); if(!r.ok)return;let vs=(await r.json()).voices||[]; if(!vs.length)return; let old=$('edgeVoice').value; $('edgeVoice').innerHTML=vs.map(v=>{let name=v.ShortName==='tr-TR-EmelNeural'?'Emel Neural':v.ShortName==='tr-TR-AhmetNeural'?'Ahmet Neural':v.ShortName; let g=String(v.Gender).toLowerCase().includes('female')?'kadın':'erkek'; return `<option value="${esc(v.ShortName)}">${esc(name)} - ${g}</option>`}).join(''); if([...$('edgeVoice').options].some(o=>o.value===old))$('edgeVoice').value=old}
 function ratePct(){return '+0%'} function pitchHz(){return '+0Hz'}
-async function edgeAudio(text){let key=$('edgeVoice').value+'|'+text; if(cache[key])return cache[key]; let fd=new FormData();fd.append('text',text);fd.append('voice',$('edgeVoice').value);fd.append('rate',ratePct());fd.append('pitch',pitchHz());let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/tts',{method:'POST',body:fd}); if(!r.ok)throw Error(await r.text()); let blob=await r.blob(); let data=await new Promise((res,rej)=>{let fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(blob)}); cache[key]=data; try{localStorage.setItem(cacheKey,JSON.stringify(cache))}catch{} return data}
-function browserSpeak(text){return new Promise(res=>{speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(text);u.lang='tr-TR';u.onend=res;u.onerror=res;speechSynthesis.speak(u)})}
-async function speakLine(i){if(!lines[i])return; current=i; render(); try{ if($('voiceMode').value==='edge'){let data=await edgeAudio(lines[i].text); if(activeAudio)activeAudio.pause(); speechSynthesis.cancel(); activeAudio=new Audio(data); await activeAudio.play(); await new Promise(res=>{activeAudio.onended=res;activeAudio.onerror=res});} else await browserSpeak(lines[i].text);}catch(e){setStatus('Edge ses hatası, tarayıcı sesi deneniyor'); await browserSpeak(lines[i].text)}}
+async function edgeAudio(text){if(!edgeReady) throw Error('Edge sunucusu yok'); let key=$('edgeVoice').value+'|'+text; if(cache[key])return cache[key]; let fd=new FormData();fd.append('text',text);fd.append('voice',$('edgeVoice').value);fd.append('rate',ratePct());fd.append('pitch',pitchHz());let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/tts',{method:'POST',body:fd}); if(!r.ok)throw Error(await r.text()); let blob=await r.blob(); let data=await new Promise((res,rej)=>{let fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(blob)}); cache[key]=data; try{localStorage.setItem(cacheKey,JSON.stringify(cache))}catch{} return data}
+function bestBrowserVoice(){
+  const voices=speechSynthesis.getVoices?.()||[];
+  return voices.find(v=>/tr|turkish|türk/i.test((v.lang||'')+' '+(v.name||''))) || voices.find(v=>/tr/i.test(v.lang||'')) || null;
+}
+function browserSpeak(text){return new Promise(res=>{speechSynthesis.cancel();let u=new SpeechSynthesisUtterance(text);u.lang='tr-TR';const v=bestBrowserVoice();if(v)u.voice=v;u.rate=1;u.pitch=1;u.onend=res;u.onerror=res;speechSynthesis.speak(u)})}
+async function speakLine(i){if(!lines[i])return; current=i; render(); try{ if(effectiveVoiceMode()==='edge'){let data=await edgeAudio(lines[i].text); if(activeAudio)activeAudio.pause(); speechSynthesis.cancel(); activeAudio=new Audio(data); await activeAudio.play(); await new Promise(res=>{activeAudio.onended=res;activeAudio.onerror=res});} else await browserSpeak(lines[i].text);}catch(e){edgeReady=false; setStatus('Sunucu yok/erişilemedi, cihaz sesiyle okunuyor'); await browserSpeak(lines[i].text)}}
 function activeLine(t){for(let i=0;i<lines.length;i++){let l=lines[i]; if(t+0.18>=l.start&&t<=l.end+0.35)return i; if(l.start>t+0.5)break} return -1}
 function nextIndex(t){for(let i=0;i<lines.length;i++)if(lines[i].start>=t)return i;return Math.max(0,lines.length-1)}
 function loop(){if(!sync)return; let v=$('video'); $('vtime').textContent=fmt(v.currentTime); if(!v.paused&&!v.ended&&lines.length){let t=v.currentTime+(+$('offset').value||0); prewarm(t); let i=activeLine(t); if(i>=0){current=i; render(); if(!spoken.has(i)){spoken.add(i); $('syncState').textContent='okuyor '+(i+1); speakLine(i).then(()=>render())}} else $('syncState').textContent='bekliyor'} raf=requestAnimationFrame(loop)}
-function prewarm(t){if($('voiceMode').value!=='edge')return; let c=0; for(let i=0;i<lines.length&&c<4;i++)if(lines[i].start>=t&&lines[i].start<t+25&&!pending.has(i)){let key=$('edgeVoice').value+'|'+lines[i].text;if(cache[key])continue; pending.add(i); edgeAudio(lines[i].text).catch(()=>{}).finally(()=>pending.delete(i)); c++}}
+function prewarm(t){if(effectiveVoiceMode()!=='edge')return; let c=0; for(let i=0;i<lines.length&&c<4;i++)if(lines[i].start>=t&&lines[i].start<t+25&&!pending.has(i)){let key=$('edgeVoice').value+'|'+lines[i].text;if(cache[key])continue; pending.add(i); edgeAudio(lines[i].text).catch(()=>{}).finally(()=>pending.delete(i)); c++}}
 function enableSync(){if(!$('video').src)return alert('Önce video yükle.'); if(!lines.length)return alert('Önce altyazı yükle.'); let hasTime=lines.some(l=>l.type!=='plain'); if(!hasTime)return alert('Bu metinde zaman damgası yok. Video senkron için .ass veya .srt kullan ya da Zamanlı Çeviri sekmesini kullan.'); disableSync(false); sync=true; spoken.clear(); current=nextIndex($('video').currentTime+(+$('offset').value||0)); render(); $('syncState').textContent='açık'; setStatus('Senkron açık'); loop()}
 function disableSync(msg=true){sync=false;if(raf)cancelAnimationFrame(raf);raf=null;speechSynthesis.cancel();if(activeAudio)activeAudio.pause();$('syncState').textContent='kapalı';if(msg)setStatus('Senkron kapalı')}
 function resetSpoken(){spoken.clear();current=nextIndex($('video').currentTime+(+$('offset').value||0));render();setStatus('Okunanlar sıfırlandı')}
@@ -105,7 +128,7 @@ function speakSelected(){disableSync(false);speakLine(current)} function toggleM
 function parseRawSub(){loadLines($('rawSub').value,'raw')} function clearPlayer(){disableSync(false);lines=[];current=0;spoken.clear();$('rawSub').value='';render();setStatus('Temizlendi')}
 function srtTime(sec){let h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=Math.floor(sec%60),ms=Math.floor((sec%1)*1000);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`}
 function exportSRT(fromLines=lines){return fromLines.map((l,i)=>`${i+1}\n${srtTime(l.start)} --> ${srtTime(l.end)}\n${l.text}\n`).join('\n')}
-async function translateText(text){let fd=new FormData();fd.append('text',text);fd.append('source',$('sourceLang').value);fd.append('target','tr');let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/translate',{method:'POST',body:fd}); if(!r.ok)throw Error(await r.text());return (await r.json()).translated||''}
+async function translateText(text){if(!edgeReady){await checkServer(); if(!edgeReady) throw Error('Çeviri için PC’de Kanka-EdgeTTS-Baslat.bat açık olmalı. Sesli okutma ise bu cihazda cihaz sesiyle çalışır.')} let fd=new FormData();fd.append('text',text);fd.append('source',$('sourceLang').value);fd.append('target','tr');let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/translate',{method:'POST',body:fd}); if(!r.ok)throw Error(await r.text());return (await r.json()).translated||''}
 async function translateBatch(batch){let payload=batch.map((l,i)=>`[${String(i+1).padStart(3,'0')}] ${l.text}`).join('\n');let tr=await translateText(payload);let rows=tr.split(/\n/).map(x=>x.trim()).filter(Boolean);let out=[];for(let i=0;i<batch.length;i++){let re=new RegExp('^\\[?'+String(i+1).padStart(3,'0')+'\\]?\\s*[:.-]?\\s*(.*)$');let row=rows.find(r=>re.test(r));out.push(row?row.replace(re,'$1').trim():null)} if(out.some(x=>!x)){out=[];for(const l of batch)out.push(await translateText(l.text))}return out}
 async function translateSubtitleTimed(){let text=$('transIn').value.trim(); if(!text)return alert('Önce altyazı yükle/yapıştır.'); let parsed=parseSubtitle(text); if(parsed.format==='plain')return alert('Bu düz metin. Zaman korumak için ASS/SRT altyazı yükle.'); $('transInfo').textContent='Çevriliyor...'; let out=parsed.lines.map(x=>({...x})); try{for(let i=0;i<out.length;i+=30){$('transInfo').textContent=`Çevriliyor: ${i+1}-${Math.min(i+30,out.length)} / ${out.length}`;let trs=await translateBatch(out.slice(i,i+30));trs.forEach((t,k)=>out[i+k].text=t||out[i+k].text)} $('transOut').value=exportSRT(out); $('transInfo').innerHTML=`<span class="ok">Bitti.</span> ${out.length} satır çevrildi, zamanlar korundu.`}catch(e){$('transInfo').innerHTML=`<span class="bad">Çeviri hatası:</span> ${esc(e.message)}`}}
 function useTranslatedSubtitle(){if(!$('transOut').value.trim())return; $('rawSub').value=$('transOut').value; loadLines($('transOut').value,'translated'); showPage('player')}
@@ -113,7 +136,7 @@ function downloadTranslated(){let txt=$('transOut').value;if(!txt.trim())return;
 async function testVoice(){
   const text = lines[current]?.text || 'Merhaba Mevlüt. Türkçe ses sistemi çalışıyor.';
   try{
-    if($('voiceMode').value==='edge'){
+    if(effectiveVoiceMode()==='edge'){
       const data=await edgeAudio(text); if(activeAudio)activeAudio.pause(); activeAudio=new Audio(data); await activeAudio.play();
     } else await browserSpeak(text);
   }catch{ await browserSpeak(text); }
@@ -123,5 +146,5 @@ $('subFile').addEventListener('change',async e=>{let f=e.target.files[0];if(!f)r
 $('transFile').addEventListener('change',async e=>{let f=e.target.files[0];if(!f)return;$('transIn').value=await f.text()});
 $('video').addEventListener('seeked',()=>resetSpoken());$('video').addEventListener('play',()=>{if(sync&&!raf)loop()});$('video').addEventListener('pause',()=>{$('syncState').textContent=sync?'durakladı':'kapalı'; if(activeAudio)activeAudio.pause(); speechSynthesis.pause()});
 $('offset').addEventListener('input',()=>{$('offsetVal').textContent=(+$('offset').value).toFixed(2)});$('videoVol').addEventListener('input',()=>{$('volVal').textContent=Math.round(+$('videoVol').value*100)+'%';$('video').volume=+$('videoVol').value});
-checkServer();render();
+if('speechSynthesis' in window) speechSynthesis.onvoiceschanged=()=>{}; checkServer();render();
 </script></body></html>
