@@ -29,7 +29,7 @@
 </head>
 <body><div class="wrap">
 <h1>🎙️ Türkçe Sesli Altyazı <span class="pill">v6 temiz sürüm</span></h1>
-<p>Video + altyazı + Türkçe ses. Telefonda/başka cihazda sunucu yoksa otomatik cihazın kendi sesine geçer. Önemli: video senkron için altyazıda zaman damgası olmalı; düz çeviri metni zamanı kaybettirir.</p>
+<p>Video + altyazı + Türkçe ses. Telefonda/başka cihazda sunucu yoksa otomatik cihazın kendi sesine geçer. Çeviri artık her cihazda tarayıcıdan çalışır. Önemli: video senkron için altyazıda zaman damgası olmalı; düz çeviri metni zamanı kaybettirir.</p>
 <div class="tabs">
 <button class="tab active" data-page="setup" onclick="showPage('setup')">1) Kurulum</button>
 <button class="tab" data-page="translate" onclick="showPage('translate')">2) Zamanlı Çeviri</button>
@@ -50,7 +50,7 @@
 
 <div id="translate" class="page">
  <div class="card"><h2>🌍 Zamanı koruyarak Türkçeye çevir</h2>
-  <p class="muted">Buraya orijinal <b>.ass veya .srt</b> dosyasını yükle. Sistem sadece konuşma metnini çevirir, zamanları korur. Sonra sonucu Video Okutucuya aktar.</p>
+  <p class="muted">Buraya orijinal <b>.ass veya .srt</b> dosyasını yükle. Çeviri telefon/tablet/PC’de doğrudan tarayıcıdan çalışır; sadece konuşma metni çevrilir, zamanlar korunur.</p>
   <div class="grid"><div><label>Altyazı dosyası (.ass/.srt)</label><input id="transFile" type="file" accept=".ass,.srt,.txt"></div><div><label>Kaynak dil</label><select id="sourceLang"><option value="auto">Otomatik</option><option value="en">İngilizce</option><option value="ja">Japonca</option><option value="de">Almanca</option></select></div></div>
   <div class="two" style="margin-top:12px"><div><label>Orijinal altyazı</label><textarea id="transIn" placeholder=".ass/.srt içeriği..."></textarea></div><div><label>Türkçe zamanlı altyazı</label><textarea id="transOut" placeholder="Çeviri burada..."></textarea></div></div>
   <div class="row" style="margin-top:12px"><button class="primary" onclick="translateSubtitleTimed()">Zamanları koruyarak Türkçeye çevir</button><button onclick="useTranslatedSubtitle()">Video okutucuya aktar</button><button onclick="downloadTranslated()">Çevrilmiş altyazıyı indir</button></div>
@@ -128,9 +128,17 @@ function speakSelected(){disableSync(false);speakLine(current)} function toggleM
 function parseRawSub(){loadLines($('rawSub').value,'raw')} function clearPlayer(){disableSync(false);lines=[];current=0;spoken.clear();$('rawSub').value='';render();setStatus('Temizlendi')}
 function srtTime(sec){let h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=Math.floor(sec%60),ms=Math.floor((sec%1)*1000);return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`}
 function exportSRT(fromLines=lines){return fromLines.map((l,i)=>`${i+1}\n${srtTime(l.start)} --> ${srtTime(l.end)}\n${l.text}\n`).join('\n')}
-async function translateText(text){if(!edgeReady){await checkServer(); if(!edgeReady) throw Error('Çeviri için PC’de Kanka-EdgeTTS-Baslat.bat açık olmalı. Sesli okutma ise bu cihazda cihaz sesiyle çalışır.')} let fd=new FormData();fd.append('text',text);fd.append('source',$('sourceLang').value);fd.append('target','tr');let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/translate',{method:'POST',body:fd}); if(!r.ok)throw Error(await r.text());return (await r.json()).translated||''}
+async function translateText(text){
+  // Universal browser-side translation. Works on phone/tablet/PC without local Python server.
+  const sl = $('sourceLang').value || 'auto';
+  const url = 'https://translate.googleapis.com/translate_a/single?client=gtx&dt=t&sl=' + encodeURIComponent(sl) + '&tl=tr&q=' + encodeURIComponent(text);
+  const r = await fetch(url, {cache:'no-store'});
+  if(!r.ok) throw Error('Web çeviri servisi cevap vermedi: ' + r.status);
+  const data = await r.json();
+  return (data?.[0]||[]).map(x=>x?.[0]||'').join('');
+}
 async function translateBatch(batch){let payload=batch.map((l,i)=>`[${String(i+1).padStart(3,'0')}] ${l.text}`).join('\n');let tr=await translateText(payload);let rows=tr.split(/\n/).map(x=>x.trim()).filter(Boolean);let out=[];for(let i=0;i<batch.length;i++){let re=new RegExp('^\\[?'+String(i+1).padStart(3,'0')+'\\]?\\s*[:.-]?\\s*(.*)$');let row=rows.find(r=>re.test(r));out.push(row?row.replace(re,'$1').trim():null)} if(out.some(x=>!x)){out=[];for(const l of batch)out.push(await translateText(l.text))}return out}
-async function translateSubtitleTimed(){let text=$('transIn').value.trim(); if(!text)return alert('Önce altyazı yükle/yapıştır.'); let parsed=parseSubtitle(text); if(parsed.format==='plain')return alert('Bu düz metin. Zaman korumak için ASS/SRT altyazı yükle.'); $('transInfo').textContent='Çevriliyor...'; let out=parsed.lines.map(x=>({...x})); try{for(let i=0;i<out.length;i+=30){$('transInfo').textContent=`Çevriliyor: ${i+1}-${Math.min(i+30,out.length)} / ${out.length}`;let trs=await translateBatch(out.slice(i,i+30));trs.forEach((t,k)=>out[i+k].text=t||out[i+k].text)} $('transOut').value=exportSRT(out); $('transInfo').innerHTML=`<span class="ok">Bitti.</span> ${out.length} satır çevrildi, zamanlar korundu.`}catch(e){$('transInfo').innerHTML=`<span class="bad">Çeviri hatası:</span> ${esc(e.message)}`}}
+async function translateSubtitleTimed(){let text=$('transIn').value.trim(); if(!text)return alert('Önce altyazı yükle/yapıştır.'); let parsed=parseSubtitle(text); if(parsed.format==='plain')return alert('Bu düz metin. Zaman korumak için ASS/SRT altyazı yükle.'); $('transInfo').textContent='Çevriliyor...'; let out=parsed.lines.map(x=>({...x})); try{for(let i=0;i<out.length;i+=12){$('transInfo').textContent=`Çevriliyor: ${i+1}-${Math.min(i+12,out.length)} / ${out.length}`;let trs=await translateBatch(out.slice(i,i+12));trs.forEach((t,k)=>out[i+k].text=t||out[i+k].text); await new Promise(r=>setTimeout(r,120))} $('transOut').value=exportSRT(out); $('transInfo').innerHTML=`<span class="ok">Bitti.</span> ${out.length} satır çevrildi, zamanlar korundu.`}catch(e){$('transInfo').innerHTML=`<span class="bad">Çeviri hatası:</span> ${esc(e.message)}. İnternet bağlantısını kontrol et veya daha küçük altyazıyla dene.`}}
 function useTranslatedSubtitle(){if(!$('transOut').value.trim())return; $('rawSub').value=$('transOut').value; loadLines($('transOut').value,'translated'); showPage('player')}
 function downloadTranslated(){let txt=$('transOut').value;if(!txt.trim())return;let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/x-subrip;charset=utf-8'}));a.download='kanka-turkce-zamanli.srt';a.click();URL.revokeObjectURL(a.href)}
 async function testVoice(){
