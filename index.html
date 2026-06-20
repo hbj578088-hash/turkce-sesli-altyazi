@@ -43,8 +43,8 @@
    <div><label>Türkçe ses</label><select id="edgeVoice"><option value="tr-TR-EmelNeural">Emel Neural - kadın</option><option value="tr-TR-AhmetNeural">Ahmet Neural - erkek</option></select></div>
    <div><label>Ses modu</label><select id="voiceMode"><option value="auto">Otomatik: sunucu varsa Edge, yoksa cihaz sesi</option><option value="edge">Sadece Edge Türkçe neural ses</option><option value="browser">Cihaz/Tarayıcı sesi</option></select></div>
   </div>
-  <div class="row" style="margin-top:12px"><button onclick="checkServer()">Sunucuyu kontrol et</button><button onclick="testVoice()">Sesi dene</button><button onclick="loadEdgeVoices()">Ücretsiz Türkçe sesleri yenile</button></div>
-  <p id="serverInfo" class="muted">PC’de kaliteli Emel/Ahmet sesi için <code>Kanka-EdgeTTS-Baslat.bat</code> açık olsun. Telefonda veya başka cihazda sunucu yoksa otomatik cihaz sesiyle çalışır.</p>
+  <div class="row" style="margin-top:12px"><button onclick="checkServer()">Sunucuyu kontrol et</button><button onclick="testVoice()">Sesi dene (klasik test)</button><button onclick="loadEdgeVoices()">Ücretsiz Türkçe sesleri yenile</button></div>
+  <p id="serverInfo" class="muted">PC’de kaliteli kadın/erkek ses için <code>Kanka-EdgeTTS-Baslat.bat</code> açık olsun. Kadın ses: <b>Emel</b>, erkek ses: <b>Ahmet</b>. Telefonda sunucu yoksa sistem çalışır ama kalite cihazın kendi sesine bağlıdır.</p>
  </div>
 </div>
 
@@ -99,12 +99,12 @@ async function checkServer(){
     let r=await fetch($('endpoint').value.replace(/\/$/,'')+'/health',{cache:'no-store'});
     if(!r.ok)throw Error(r.status);
     edgeReady=true;
-    $('serverInfo').innerHTML='<span class="ok">Edge-TTS hazır.</span> PC kaliteli Emel/Ahmet sesi kullanılacak.';
+    $('serverInfo').innerHTML='<span class="ok">Edge-TTS hazır.</span> Kaliteli Emel/Ahmet sesi kullanılacak. Varsayılan kadın ses: Emel.';
     await loadEdgeVoices();
     return true;
   }catch(e){
     edgeReady=false;
-    $('serverInfo').innerHTML='<span class="warn">Yerel Edge sunucusu yok.</span> Sorun değil: bu cihazda tarayıcı/telefon sesiyle çalışacak. PC’de kaliteli ses için Kanka-EdgeTTS-Baslat.bat aç.';
+    $('serverInfo').innerHTML='<span class="warn">Yerel Edge sunucusu yok.</span> Bu cihazda tarayıcı/telefon sesiyle çalışacak; kalite daha düşük olabilir. Kaliteli kadın/erkek ses için PC’de Kanka-EdgeTTS-Baslat.bat aç.';
     return false;
   }
 }
@@ -142,7 +142,7 @@ async function translateSubtitleTimed(){let text=$('transIn').value.trim(); if(!
 function useTranslatedSubtitle(){if(!$('transOut').value.trim())return; $('rawSub').value=$('transOut').value; loadLines($('transOut').value,'translated'); showPage('player')}
 function downloadTranslated(){let txt=$('transOut').value;if(!txt.trim())return;let a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'application/x-subrip;charset=utf-8'}));a.download='kanka-turkce-zamanli.srt';a.click();URL.revokeObjectURL(a.href)}
 async function testVoice(){
-  const text = lines[current]?.text || 'Merhaba Mevlüt. Türkçe ses sistemi çalışıyor.';
+  const text = lines[current]?.text || 'Bu bir ses denemesidir. Türkçe altyazı okuma sistemi hazır.';
   try{
     if(effectiveVoiceMode()==='edge'){
       const data=await edgeAudio(text); if(activeAudio)activeAudio.pause(); activeAudio=new Audio(data); await activeAudio.play();
